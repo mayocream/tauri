@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.7.0]
+
+### Bug Fixes
+
+- [`29c87c3d3`](https://www.github.com/tauri-apps/tauri/commit/29c87c3d3f5bbcf5a7ae9de01af7e6bb738c1d01) ([#15777](https://www.github.com/tauri-apps/tauri/pull/15777) by [@VityaSchel](https://www.github.com/tauri-apps/tauri/../../VityaSchel)) Emit embedded assets and CSP script/style hashes in sorted order so `generate_context!` output no longer depends on the filesystem walk order, which varies across machines and broke reproducible builds.
+
+### What's Changed
+
+- [`1cffb01da`](https://www.github.com/tauri-apps/tauri/commit/1cffb01da55f5fcd5a0f74ef3281b5a715513e4d) ([#13221](https://www.github.com/tauri-apps/tauri/pull/13221) by [@lucasfernog](https://www.github.com/tauri-apps/tauri/../../lucasfernog)) Set MSRV to 1.90.
+
+### Dependencies
+
+- Upgraded to `tauri-utils@2.10.0`
+
 ## \[2.6.3]
 
 ### Dependencies
