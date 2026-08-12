@@ -211,10 +211,12 @@ pub fn bundle_project(settings: &Settings) -> crate::Result<Vec<PathBuf>> {
     log::debug!(action = "Running"; "Command `linuxdeploy {}`", cmd.get_args().map(|arg| arg.to_string_lossy()).fold(String::new(), |acc, arg| format!("{acc} {arg}")));
     let output = cmd.output()?;
     if !output.status.success() {
-      let diagnostic = String::from_utf8_lossy(&output.stderr);
+      let stderr = String::from_utf8_lossy(&output.stderr);
+      let stdout = String::from_utf8_lossy(&output.stdout);
       return Err(crate::Error::GenericError(format!(
-        "failed to run linuxdeploy: {}",
-        diagnostic.trim()
+        "failed to run linuxdeploy:\n{}\n{}",
+        stderr.trim(),
+        stdout.trim()
       )));
     }
   } else {
