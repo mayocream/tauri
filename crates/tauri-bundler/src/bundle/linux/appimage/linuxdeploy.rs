@@ -224,6 +224,10 @@ pub fn bundle_project(settings: &Settings) -> crate::Result<Vec<PathBuf>> {
 
 // returns the linuxdeploy path to keep linuxdeploy_arch contained
 fn prepare_tools(tools_path: &Path, arch: &str, verbose: bool) -> crate::Result<PathBuf> {
+  // This upstream build applies --exclude-library while tracing dependencies,
+  // so runtime-owned libraries do not have to exist on the bundling host.
+  const LINUXDEPLOY_VERSION: &str = "07333c6";
+
   let apprun = tools_path.join(format!("AppRun-{arch}"));
   if !apprun.exists() {
     let data = download(&format!(
@@ -233,9 +237,13 @@ fn prepare_tools(tools_path: &Path, arch: &str, verbose: bool) -> crate::Result<
   }
 
   let linuxdeploy_arch = if arch == "i686" { "i386" } else { arch };
-  let linuxdeploy = tools_path.join(format!("linuxdeploy-{linuxdeploy_arch}.AppImage"));
+  let linuxdeploy = tools_path.join(format!(
+    "linuxdeploy-{LINUXDEPLOY_VERSION}-{linuxdeploy_arch}.AppImage"
+  ));
   if !linuxdeploy.exists() {
-    let data = download(&format!("https://github.com/tauri-apps/binary-releases/releases/download/linuxdeploy/linuxdeploy-{linuxdeploy_arch}.AppImage"))?;
+    let data = download(&format!(
+      "https://github.com/mayocream/binary-releases/releases/download/linuxdeploy-{LINUXDEPLOY_VERSION}/linuxdeploy-{linuxdeploy_arch}.AppImage"
+    ))?;
     write_and_make_executable(&linuxdeploy, data)?;
   }
 
