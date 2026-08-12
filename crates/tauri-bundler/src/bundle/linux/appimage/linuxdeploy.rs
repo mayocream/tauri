@@ -201,6 +201,9 @@ pub fn bundle_project(settings: &Settings) -> crate::Result<Vec<PathBuf>> {
   if settings.appimage().bundle_media_framework {
     cmd.args(["--plugin", "gstreamer"]);
   }
+  for library in &settings.appimage().exclude_libraries {
+    cmd.args(["--exclude-library", library]);
+  }
   cmd.args(["--output", "appimage"]);
 
   // Linuxdeploy logs everything into stderr so we have to ignore the output ourselves here

@@ -220,6 +220,8 @@ pub struct DebianSettings {
 pub struct AppImageSettings {
   /// The files to include in the Appimage Binary.
   pub files: HashMap<PathBuf, PathBuf>,
+  /// Shared library glob patterns passed to linuxdeploy's `--exclude-library` option.
+  pub exclude_libraries: Vec<String>,
   /// Whether to include gstreamer plugins for audio/media support.
   pub bundle_media_framework: bool,
   /// Whether to include the `xdg-open` binary.

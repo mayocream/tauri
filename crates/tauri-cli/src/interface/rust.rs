@@ -1583,6 +1583,7 @@ fn tauri_config_to_bundle_settings(
     },
     appimage: AppImageSettings {
       files: appimage_files,
+      exclude_libraries: Vec::new(),
       bundle_media_framework: config.linux.appimage.bundle_media_framework,
       bundle_xdg_open: false,
     },
