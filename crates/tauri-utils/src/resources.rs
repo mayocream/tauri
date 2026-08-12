@@ -32,7 +32,7 @@ fn normalize(path: &Path) -> PathBuf {
   let mut dest = PathBuf::new();
   for component in path.components() {
     match component {
-      Component::Prefix(_) => {}
+      Component::Prefix(prefix) => dest.push(prefix.as_os_str()),
       Component::RootDir => dest.push("/"),
       Component::CurDir => {}
       Component::ParentDir => dest.push(".."),
@@ -310,6 +310,17 @@ mod tests {
   use super::*;
   use std::fs;
   use std::path::Path;
+
+  #[cfg(windows)]
+  #[test]
+  fn normalize_preserves_absolute_windows_prefixes() {
+    for path in [
+      r"C:\Users\runneradmin\AppData\Local\Temp\runtime",
+      r"\\server\share\runtime",
+    ] {
+      assert_eq!(normalize(Path::new(path)), PathBuf::from(path));
+    }
+  }
 
   impl PartialEq for Resource {
     fn eq(&self, other: &Self) -> bool {
