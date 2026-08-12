@@ -201,6 +201,14 @@ pub fn bundle_project(settings: &Settings) -> crate::Result<Vec<PathBuf>> {
   if settings.appimage().bundle_media_framework {
     cmd.args(["--plugin", "gstreamer"]);
   }
+  if !settings.appimage().exclude_libraries.is_empty() {
+    // Input plugins can invoke linuxdeploy again in plugin mode. The environment
+    // variable is linuxdeploy's propagation mechanism for those nested scans.
+    cmd.env(
+      "LINUXDEPLOY_EXCLUDED_LIBRARIES",
+      settings.appimage().exclude_libraries.join(";"),
+    );
+  }
   for library in &settings.appimage().exclude_libraries {
     cmd.args(["--exclude-library", library]);
   }
