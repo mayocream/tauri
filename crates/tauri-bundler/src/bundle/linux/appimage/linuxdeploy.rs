@@ -209,10 +209,13 @@ pub fn bundle_project(settings: &Settings) -> crate::Result<Vec<PathBuf>> {
   // Linuxdeploy logs everything into stderr so we have to ignore the output ourselves here
   if settings.log_level() == log::Level::Error {
     log::debug!(action = "Running"; "Command `linuxdeploy {}`", cmd.get_args().map(|arg| arg.to_string_lossy()).fold(String::new(), |acc, arg| format!("{acc} {arg}")));
-    if !cmd.output()?.status.success() {
-      return Err(crate::Error::GenericError(
-        "failed to run linuxdeploy".to_string(),
-      ));
+    let output = cmd.output()?;
+    if !output.status.success() {
+      let diagnostic = String::from_utf8_lossy(&output.stderr);
+      return Err(crate::Error::GenericError(format!(
+        "failed to run linuxdeploy: {}",
+        diagnostic.trim()
+      )));
     }
   } else {
     cmd.output_ok()?;
