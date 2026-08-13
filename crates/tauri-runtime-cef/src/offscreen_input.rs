@@ -3,8 +3,8 @@
 // SPDX-License-Identifier: MIT
 
 use cef::{
-  CefString, ImplBrowserHost as _, KeyEvent as CefKeyEvent, KeyEventType, MouseButtonType,
-  MouseEvent,
+  CefString, CompositionUnderline, CompositionUnderlineStyle, ImplBrowserHost as _,
+  KeyEvent as CefKeyEvent, KeyEventType, MouseButtonType, MouseEvent,
 };
 use winit::{
   dpi::{PhysicalPosition, PhysicalSize},
@@ -195,9 +195,10 @@ pub(crate) fn handle(appwindow: &mut AppWindow, event: &WindowEvent) {
         appwindow.offscreen_input.ime_cursor_area = None;
         if let Some(child) = visible_children(appwindow).next_back() {
           let replacement = invalid_cef_range();
+          let underlines = composition_underlines(text, selection.as_ref());
           child.host.ime_set_composition(
             Some(&CefString::from(text.as_str())),
-            None,
+            Some(&underlines),
             Some(&replacement),
             selection.as_ref(),
           );
@@ -280,6 +281,41 @@ fn invalid_cef_range() -> cef::Range {
     from: u32::MAX,
     to: u32::MAX,
   }
+}
+
+fn composition_underlines(text: &str, selection: Option<&cef::Range>) -> Vec<CompositionUnderline> {
+  let length = text.encode_utf16().count() as u32;
+  if length == 0 {
+    return Vec::new();
+  }
+
+  let target = selection.and_then(|range| {
+    let from = range.from.min(length);
+    let to = range.to.min(length);
+    (from < to).then_some((from, to))
+  });
+  let mut underlines = Vec::with_capacity(if target.is_some() { 3 } else { 1 });
+  let mut push = |from, to, thick, style| {
+    if from < to {
+      underlines.push(CompositionUnderline {
+        range: cef::Range { from, to },
+        color: 0xff000000,
+        background_color: 0x00000000,
+        thick,
+        style,
+        ..Default::default()
+      });
+    }
+  };
+
+  if let Some((from, to)) = target {
+    push(0, from, 0, CompositionUnderlineStyle::DOT);
+    push(from, to, 1, CompositionUnderlineStyle::SOLID);
+    push(to, length, 0, CompositionUnderlineStyle::DOT);
+  } else {
+    push(0, length, 0, CompositionUnderlineStyle::DOT);
+  }
+  underlines
 }
 
 #[cfg(windows)]
@@ -426,5 +462,36 @@ fn windows_key_code(key: &Key) -> i32 {
       _ => 0,
     },
     _ => 0,
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn composition_uses_a_transparent_dotted_underline_by_default() {
+    let underlines = composition_underlines("a😀b", None);
+
+    assert_eq!(underlines.len(), 1);
+    assert_eq!(underlines[0].range.from, 0);
+    assert_eq!(underlines[0].range.to, 4);
+    assert_eq!(underlines[0].background_color, 0);
+    assert_eq!(underlines[0].thick, 0);
+    assert_eq!(underlines[0].style, CompositionUnderlineStyle::DOT);
+  }
+
+  #[test]
+  fn composition_emphasizes_only_the_ime_target_range() {
+    let target = cef::Range { from: 1, to: 3 };
+    let underlines = composition_underlines("a😀b", Some(&target));
+
+    assert_eq!(underlines.len(), 3);
+    assert_eq!((underlines[0].range.from, underlines[0].range.to), (0, 1));
+    assert_eq!((underlines[1].range.from, underlines[1].range.to), (1, 3));
+    assert_eq!(underlines[1].background_color, 0);
+    assert_eq!(underlines[1].thick, 1);
+    assert_eq!(underlines[1].style, CompositionUnderlineStyle::SOLID);
+    assert_eq!((underlines[2].range.from, underlines[2].range.to), (3, 4));
   }
 }
