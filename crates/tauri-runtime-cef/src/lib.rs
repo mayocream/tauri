@@ -7,6 +7,8 @@
 
 mod cef_impl;
 mod external_message_pump;
+mod offscreen;
+mod offscreen_input;
 mod platform;
 mod runtime;
 mod webview;
@@ -14,6 +16,7 @@ mod window;
 mod window_builder;
 mod window_handle;
 
+pub use offscreen::*;
 pub use runtime::*;
 pub use webview::*;
 pub use window::CefWindowDispatcher;

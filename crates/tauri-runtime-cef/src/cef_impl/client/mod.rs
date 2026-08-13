@@ -22,6 +22,7 @@ mod life_span;
 mod load;
 mod permission;
 mod process;
+mod render;
 
 use context_menu::TauriCefContextMenuHandler;
 use display::TauriCefDisplayHandler;
@@ -36,6 +37,7 @@ use life_span::TauriCefChildLifeSpanHandler;
 use load::TauriCefLoadHandler;
 use permission::TauriCefPermissionHandler;
 pub(crate) use process::TauriCefBrowserProcessHandler;
+use render::TauriCefRenderHandler;
 
 pub(crate) struct TauriCefBrowserClientHandlers<T: UserEvent> {
   pub(crate) ipc_handler: Option<Arc<ipc::IpcHandler<T>>>,
@@ -76,12 +78,20 @@ wrap_client! {
     drag_drop_event_target: DragDropEventTarget,
     drag_drop_handler_enabled: bool,
     drag_drop_state: Arc<Mutex<DragDropState>>,
+    offscreen_surface: Option<crate::OffscreenSurface>,
     pub(crate) handlers: TauriCefBrowserClientHandlers<T>,
     proxy: WinitEventLoopProxy,
     sender: Sender<Message<T>>,
   }
 
   impl Client {
+    fn render_handler(&self) -> Option<RenderHandler> {
+      self
+        .offscreen_surface
+        .clone()
+        .map(TauriCefRenderHandler::new)
+    }
+
     fn drag_handler(&self) -> Option<DragHandler> {
       self
         .drag_drop_handler_enabled

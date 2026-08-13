@@ -137,6 +137,13 @@ pub type Cef = tauri_runtime_cef::CefRuntime<EventLoopMessage>;
 #[cfg_attr(docsrs, doc(cfg(feature = "cef")))]
 pub type CefHandle = tauri_runtime_cef::CefRuntimeHandle<EventLoopMessage>;
 
+#[cfg(feature = "cef")]
+#[cfg_attr(docsrs, doc(cfg(feature = "cef")))]
+pub use tauri_runtime_cef::{
+  OffscreenFrame as CefOffscreenFrame, OffscreenRect as CefOffscreenRect,
+  OffscreenSnapshot as CefOffscreenSnapshot, OffscreenSurface as CefOffscreenSurface,
+};
+
 /// Helper function for non-browser CEF processes (renderer, GPU, plugin, etc.).
 #[cfg(feature = "cef")]
 #[cfg_attr(docsrs, doc(cfg(feature = "cef")))]

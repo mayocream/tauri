@@ -918,6 +918,8 @@ impl<T: UserEvent> ApplicationHandler for WinitCefApp<T> {
       return;
     };
 
+    crate::offscreen_input::handle(appwindow, &event);
+
     match event {
       WinitWindowEvent::CloseRequested => self.request_window_close(window_id, event_loop),
 
@@ -1431,6 +1433,7 @@ impl<T: UserEvent> CefRuntime<T> {
       no_sandbox: !cfg!(feature = "sandbox") as i32,
       cache_path: cache_path.to_string_lossy().to_string().as_str().into(),
       external_message_pump: 1,
+      windowless_rendering_enabled: 1,
       ..Default::default()
     };
     if cef::initialize(

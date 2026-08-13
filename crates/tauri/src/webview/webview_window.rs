@@ -53,6 +53,13 @@ pub struct WebviewWindowBuilder<'a, R: Runtime, M: Manager<R>> {
 #[cfg(feature = "cef")]
 #[cfg_attr(not(feature = "unstable"), allow(dead_code))]
 impl<'a, M: Manager<crate::Cef>> WebviewWindowBuilder<'a, crate::Cef, M> {
+  /// Renders this webview into the supplied off-screen surface instead of a
+  /// native child window.
+  pub fn offscreen(mut self, surface: crate::CefOffscreenSurface) -> Self {
+    self.webview_builder = self.webview_builder.offscreen(surface);
+    self
+  }
+
   /// Sets the browser runtime style.
   ///
   /// See [`tauri_runtime_cef::RuntimeStyle`] for more information.

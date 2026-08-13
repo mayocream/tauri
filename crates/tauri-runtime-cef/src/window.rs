@@ -329,6 +329,7 @@ pub(crate) struct AppWindow {
   pub(crate) attrs: AppWindowAttrs,
   pub(crate) children: Vec<AppWebview>,
   pub(crate) listeners: WindowEventListeners,
+  pub(crate) offscreen_input: crate::offscreen_input::OffscreenInputState,
   #[cfg(target_os = "macos")]
   pub(crate) appkit_state: Arc<RwLock<AppkitState>>,
 }
@@ -441,6 +442,7 @@ impl<T: UserEvent> WinitCefApp<T> {
       attrs,
       children: Vec::new(),
       listeners: Default::default(),
+      offscreen_input: Default::default(),
       #[cfg(target_os = "macos")]
       appkit_state: Arc::new(RwLock::new(AppkitState::default())),
     };
