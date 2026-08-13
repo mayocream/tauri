@@ -194,10 +194,11 @@ pub(crate) fn handle(appwindow: &mut AppWindow, event: &WindowEvent) {
         appwindow.offscreen_input.ime_cursor = selection.as_ref().map(|range| range.to as usize);
         appwindow.offscreen_input.ime_cursor_area = None;
         if let Some(child) = visible_children(appwindow).next_back() {
+          let replacement = invalid_cef_range();
           child.host.ime_set_composition(
             Some(&CefString::from(text.as_str())),
             None,
-            None,
+            Some(&replacement),
             selection.as_ref(),
           );
         }
@@ -205,9 +206,10 @@ pub(crate) fn handle(appwindow: &mut AppWindow, event: &WindowEvent) {
       }
       Ime::Commit(text) => {
         if let Some(child) = visible_children(appwindow).next_back() {
+          let replacement = invalid_cef_range();
           child
             .host
-            .ime_commit_text(Some(&CefString::from(text.as_str())), None, 0);
+            .ime_commit_text(Some(&CefString::from(text.as_str())), Some(&replacement), 0);
         }
         clear_ime_state(appwindow);
       }
@@ -269,6 +271,15 @@ fn sync_ime_cursor_area(appwindow: &mut AppWindow) {
 fn clear_ime_state(appwindow: &mut AppWindow) {
   appwindow.offscreen_input.ime_cursor = None;
   appwindow.offscreen_input.ime_cursor_area = None;
+}
+
+fn invalid_cef_range() -> cef::Range {
+  // CEF's Windows OSR integration requires the concrete InvalidRange value;
+  // passing a null range pointer causes Chromium to discard the composition.
+  cef::Range {
+    from: u32::MAX,
+    to: u32::MAX,
+  }
 }
 
 #[cfg(windows)]
