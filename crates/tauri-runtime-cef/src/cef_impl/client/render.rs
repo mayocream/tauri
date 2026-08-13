@@ -73,6 +73,17 @@ wrap_render_handler! {
       }
     }
 
+    fn on_ime_composition_range_changed(
+      &self,
+      _browser: Option<&mut Browser>,
+      _selected_range: Option<&Range>,
+      character_bounds: Option<&[Rect]>,
+    ) {
+      self
+        .surface
+        .set_ime_character_bounds(character_bounds.unwrap_or_default());
+    }
+
     fn on_paint(
       &self,
       _browser: Option<&mut Browser>,

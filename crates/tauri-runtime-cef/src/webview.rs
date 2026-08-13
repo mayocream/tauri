@@ -328,13 +328,8 @@ impl<T: UserEvent> WinitCefApp<T> {
     if child.offscreen_surface.is_none() {
       child.raise_to_top();
     }
-    if child.offscreen_surface.is_some() {
-      use winit::window::{ImeCapabilities, ImeEnableRequest, ImeRequest, ImeRequestData};
-      let enable = ImeEnableRequest::new(ImeCapabilities::new(), ImeRequestData::default())
-        .expect("empty IME capabilities match empty request data");
-      let _ = appwindow
-        .window
-        .request_ime_update(ImeRequest::Enable(enable));
+    if let Some(surface) = &child.offscreen_surface {
+      crate::offscreen_input::enable_ime(appwindow, surface);
     }
 
     *live_browsers += 1;

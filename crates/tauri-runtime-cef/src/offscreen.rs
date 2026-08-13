@@ -39,6 +39,14 @@ pub(crate) struct OffscreenBounds {
   pub(crate) scale_factor: f64,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct OffscreenImeCursorArea {
+  pub(crate) x: i32,
+  pub(crate) y: i32,
+  pub(crate) width: u32,
+  pub(crate) height: u32,
+}
+
 impl Default for OffscreenBounds {
   fn default() -> Self {
     Self {
@@ -58,6 +66,7 @@ struct OffscreenState {
   popup_rect: OffscreenRect,
   view: Option<OffscreenFrame>,
   popup: Option<OffscreenFrame>,
+  ime_character_bounds: Vec<OffscreenRect>,
   next_serial: u64,
 }
 
@@ -70,6 +79,7 @@ impl Default for OffscreenState {
       popup_rect: OffscreenRect::default(),
       view: None,
       popup: None,
+      ime_character_bounds: Vec::new(),
       next_serial: 1,
     }
   }
@@ -153,6 +163,34 @@ impl OffscreenSurface {
     };
   }
 
+  pub(crate) fn set_ime_character_bounds(&self, bounds: &[cef::Rect]) {
+    self.inner.state.lock().unwrap().ime_character_bounds = bounds
+      .iter()
+      .map(|rect| OffscreenRect {
+        x: rect.x,
+        y: rect.y,
+        width: rect.width.max(0) as u32,
+        height: rect.height.max(0) as u32,
+      })
+      .collect();
+    (self.inner.request_redraw)();
+  }
+
+  pub(crate) fn ime_cursor_area(&self, cursor: usize) -> Option<OffscreenImeCursorArea> {
+    let state = self.inner.state.lock().unwrap();
+    let index = cursor
+      .saturating_sub(1)
+      .min(state.ime_character_bounds.len().checked_sub(1)?);
+    let rect = state.ime_character_bounds[index];
+    let scale = state.bounds.scale_factor;
+    Some(OffscreenImeCursorArea {
+      x: state.bounds.x + (f64::from(rect.x) * scale).round() as i32,
+      y: state.bounds.y + (f64::from(rect.y) * scale).round() as i32,
+      width: (f64::from(rect.width) * scale).round().max(1.0) as u32,
+      height: (f64::from(rect.height) * scale).round().max(1.0) as u32,
+    })
+  }
+
   pub(crate) fn publish(&self, popup: bool, width: u32, height: u32, pixels: Arc<[u8]>) {
     let mut state = self.inner.state.lock().unwrap();
     let serial = state.next_serial;
@@ -170,5 +208,46 @@ impl OffscreenSurface {
     }
     drop(state);
     (self.inner.request_redraw)();
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn ime_cursor_area_maps_cef_logical_bounds_into_parent_pixels() {
+    let surface = OffscreenSurface::new(|| {});
+    surface.set_bounds(OffscreenBounds {
+      x: 40,
+      y: 60,
+      width: 800,
+      height: 600,
+      scale_factor: 1.5,
+    });
+    surface.set_ime_character_bounds(&[
+      cef::Rect {
+        x: 10,
+        y: 20,
+        width: 8,
+        height: 12,
+      },
+      cef::Rect {
+        x: 18,
+        y: 20,
+        width: 9,
+        height: 12,
+      },
+    ]);
+
+    assert_eq!(
+      surface.ime_cursor_area(2),
+      Some(OffscreenImeCursorArea {
+        x: 67,
+        y: 90,
+        width: 14,
+        height: 18,
+      })
+    );
   }
 }

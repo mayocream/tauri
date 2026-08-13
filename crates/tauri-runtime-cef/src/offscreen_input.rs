@@ -7,11 +7,17 @@ use cef::{
   MouseEvent,
 };
 use winit::{
+  dpi::{PhysicalPosition, PhysicalSize},
   event::{ElementState, Ime, MouseButton, MouseScrollDelta, PointerSource, WindowEvent},
   keyboard::{Key, ModifiersState, NamedKey},
+  window::{ImeCapabilities, ImeEnableRequest, ImeRequest, ImeRequestData},
 };
 
-use crate::{offscreen::OffscreenBounds, window::AppWindow};
+use crate::{
+  OffscreenSurface,
+  offscreen::{OffscreenBounds, OffscreenImeCursorArea},
+  window::AppWindow,
+};
 
 #[derive(Default)]
 pub(crate) struct OffscreenInputState {
@@ -19,14 +25,57 @@ pub(crate) struct OffscreenInputState {
   cursor_y: f64,
   modifiers: ModifiersState,
   pressed_buttons: u32,
+  ime_cursor: Option<usize>,
+  ime_cursor_area: Option<OffscreenImeCursorArea>,
+  #[cfg(windows)]
+  ime_caret_created: bool,
+}
+
+pub(crate) fn enable_ime(appwindow: &AppWindow, surface: &OffscreenSurface) {
+  let bounds = surface.bounds();
+  let request_data = ImeRequestData::default().with_cursor_area(
+    PhysicalPosition::new(bounds.x, bounds.y).into(),
+    PhysicalSize::new(1, 1).into(),
+  );
+  let capabilities = ImeCapabilities::new().with_cursor_area();
+
+  if !appwindow
+    .window
+    .ime_capabilities()
+    .is_some_and(|enabled| enabled.cursor_area())
+  {
+    if appwindow.window.ime_capabilities().is_some()
+      && let Err(error) = appwindow.window.request_ime_update(ImeRequest::Disable)
+    {
+      log::warn!("failed to reset off-screen IME state: {error}");
+    }
+    let enable = ImeEnableRequest::new(capabilities, request_data)
+      .expect("off-screen IME capabilities match the initial cursor area");
+    if let Err(error) = appwindow
+      .window
+      .request_ime_update(ImeRequest::Enable(enable))
+    {
+      log::warn!("failed to enable off-screen IME input: {error}");
+    }
+  }
+
+  #[cfg(windows)]
+  appwindow.install_offscreen_ime_hook();
 }
 
 pub(crate) fn handle(appwindow: &mut AppWindow, event: &WindowEvent) {
+  sync_ime_cursor_area(appwindow);
   match event {
     WindowEvent::ModifiersChanged(modifiers) => {
       appwindow.offscreen_input.modifiers = modifiers.state();
     }
     WindowEvent::Focused(focused) => {
+      #[cfg(windows)]
+      if *focused {
+        appwindow.restore_offscreen_ime_context();
+      } else {
+        destroy_ime_caret(appwindow);
+      }
       for child in visible_children(appwindow) {
         child.host.set_focus(i32::from(*focused));
         if !focused {
@@ -136,16 +185,15 @@ pub(crate) fn handle(appwindow: &mut AppWindow, event: &WindowEvent) {
         }
       }
     }
-    WindowEvent::Ime(ime) => {
-      let Some(child) = visible_children(appwindow).next_back() else {
-        return;
-      };
-      match ime {
-        Ime::Preedit(text, cursor) => {
-          let selection = cursor.map(|(start, end)| cef::Range {
-            from: text[..start].encode_utf16().count() as u32,
-            to: text[..end].encode_utf16().count() as u32,
-          });
+    WindowEvent::Ime(ime) => match ime {
+      Ime::Preedit(text, cursor) => {
+        let selection = cursor.map(|(start, end)| cef::Range {
+          from: text[..start].encode_utf16().count() as u32,
+          to: text[..end].encode_utf16().count() as u32,
+        });
+        appwindow.offscreen_input.ime_cursor = selection.as_ref().map(|range| range.to as usize);
+        appwindow.offscreen_input.ime_cursor_area = None;
+        if let Some(child) = visible_children(appwindow).next_back() {
           child.host.ime_set_composition(
             Some(&CefString::from(text.as_str())),
             None,
@@ -153,16 +201,81 @@ pub(crate) fn handle(appwindow: &mut AppWindow, event: &WindowEvent) {
             selection.as_ref(),
           );
         }
-        Ime::Commit(text) => {
+        sync_ime_cursor_area(appwindow);
+      }
+      Ime::Commit(text) => {
+        if let Some(child) = visible_children(appwindow).next_back() {
           child
             .host
-            .ime_commit_text(Some(&CefString::from(text.as_str())), None, 0)
+            .ime_commit_text(Some(&CefString::from(text.as_str())), None, 0);
         }
-        Ime::Disabled => child.host.ime_cancel_composition(),
-        Ime::Enabled | Ime::DeleteSurrounding { .. } => {}
+        clear_ime_state(appwindow);
       }
-    }
+      Ime::Disabled => {
+        if let Some(child) = visible_children(appwindow).next_back() {
+          child.host.ime_cancel_composition();
+        }
+        clear_ime_state(appwindow);
+        #[cfg(windows)]
+        destroy_ime_caret(appwindow);
+      }
+      Ime::Enabled =>
+      {
+        #[cfg(windows)]
+        if !appwindow.offscreen_input.ime_caret_created {
+          appwindow.offscreen_input.ime_caret_created = appwindow.create_offscreen_ime_caret();
+        }
+      }
+      Ime::DeleteSurrounding { .. } => {}
+    },
     _ => {}
+  }
+}
+
+fn sync_ime_cursor_area(appwindow: &mut AppWindow) {
+  let Some(cursor) = appwindow.offscreen_input.ime_cursor else {
+    return;
+  };
+  let Some(area) = visible_children(appwindow)
+    .next_back()
+    .and_then(|child| child.offscreen_surface.as_ref())
+    .and_then(|surface| surface.ime_cursor_area(cursor))
+  else {
+    return;
+  };
+  if appwindow.offscreen_input.ime_cursor_area == Some(area) {
+    return;
+  }
+
+  let request = ImeRequestData::default().with_cursor_area(
+    PhysicalPosition::new(area.x, area.y).into(),
+    PhysicalSize::new(area.width, area.height).into(),
+  );
+  if let Err(error) = appwindow
+    .window
+    .request_ime_update(ImeRequest::Update(request))
+  {
+    log::warn!("failed to update off-screen IME cursor area: {error}");
+    return;
+  }
+
+  #[cfg(windows)]
+  if appwindow.offscreen_input.ime_caret_created {
+    appwindow.position_offscreen_ime_caret(area.x, area.y, area.height);
+  }
+  appwindow.offscreen_input.ime_cursor_area = Some(area);
+}
+
+fn clear_ime_state(appwindow: &mut AppWindow) {
+  appwindow.offscreen_input.ime_cursor = None;
+  appwindow.offscreen_input.ime_cursor_area = None;
+}
+
+#[cfg(windows)]
+fn destroy_ime_caret(appwindow: &mut AppWindow) {
+  if appwindow.offscreen_input.ime_caret_created {
+    appwindow.destroy_offscreen_ime_caret();
+    appwindow.offscreen_input.ime_caret_created = false;
   }
 }
 
