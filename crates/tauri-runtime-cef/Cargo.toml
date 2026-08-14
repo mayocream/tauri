@@ -85,6 +85,7 @@ objc2-foundation = { version = "0.3", default-features = false, features = [
   "NSTimer",
   "NSURL",
 ] }
+winit-appkit = "0.31.0-beta.2"
 
 [target."cfg(any(target_os = \"linux\", target_os = \"dragonfly\", target_os = \"freebsd\", target_os = \"openbsd\", target_os = \"netbsd\"))".dependencies]
 dlopen2 = { version = "0.8", features = ["derive"] }

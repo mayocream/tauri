@@ -6,9 +6,11 @@ use cef::{
   CefString, CompositionUnderline, CompositionUnderlineStyle, ImplBrowserHost as _,
   KeyEvent as CefKeyEvent, KeyEventType, MouseButtonType, MouseEvent,
 };
+#[cfg(target_os = "macos")]
+use winit::keyboard::{NativeKeyCode, PhysicalKey};
 use winit::{
   dpi::{PhysicalPosition, PhysicalSize},
-  event::{ElementState, Ime, MouseButton, MouseScrollDelta, PointerSource, WindowEvent},
+  event::{ElementState, Ime, KeyEvent, MouseButton, MouseScrollDelta, PointerSource, WindowEvent},
   keyboard::{Key, ModifiersState, NamedKey},
   window::{ImeCapabilities, ImeEnableRequest, ImeRequest, ImeRequestData},
 };
@@ -149,8 +151,16 @@ pub(crate) fn handle(appwindow: &mut AppWindow, event: &WindowEvent) {
         return;
       };
       let key_code = windows_key_code(&event.logical_key);
+      let native_key_code = native_key_code(event, key_code);
       let modifiers = cef_modifiers(&appwindow.offscreen_input);
+      #[cfg(windows)]
       let is_system_key = i32::from(appwindow.offscreen_input.modifiers.alt_key());
+      #[cfg(not(windows))]
+      let is_system_key = 0;
+      #[cfg(target_os = "macos")]
+      let (character, unmodified_character) = macos_key_characters(event);
+      #[cfg(not(target_os = "macos"))]
+      let (character, unmodified_character) = (0, 0);
       let type_ = if event.state.is_pressed() {
         KeyEventType::RAWKEYDOWN
       } else {
@@ -160,8 +170,10 @@ pub(crate) fn handle(appwindow: &mut AppWindow, event: &WindowEvent) {
         type_,
         modifiers,
         windows_key_code: key_code,
-        native_key_code: key_code,
+        native_key_code,
         is_system_key,
+        character,
+        unmodified_character,
         ..Default::default()
       }));
 
@@ -176,7 +188,7 @@ pub(crate) fn handle(appwindow: &mut AppWindow, event: &WindowEvent) {
             type_: KeyEventType::CHAR,
             modifiers,
             windows_key_code: i32::from(character),
-            native_key_code: key_code,
+            native_key_code,
             is_system_key,
             character,
             unmodified_character: character,
@@ -465,9 +477,68 @@ fn windows_key_code(key: &Key) -> i32 {
   }
 }
 
+#[cfg(not(target_os = "macos"))]
+fn native_key_code(_event: &KeyEvent, windows_key_code: i32) -> i32 {
+  windows_key_code
+}
+
+#[cfg(target_os = "macos")]
+fn native_key_code(event: &KeyEvent, _windows_key_code: i32) -> i32 {
+  macos_native_key_code(event.physical_key)
+}
+
+#[cfg(target_os = "macos")]
+fn macos_native_key_code(physical_key: PhysicalKey) -> i32 {
+  // CEF rebuilds an NSEvent from this value and derives the DOM key from it.
+  match physical_key {
+    PhysicalKey::Unidentified(NativeKeyCode::MacOS(key_code)) => i32::from(key_code),
+    physical_key => winit_appkit::physicalkey_to_scancode(physical_key)
+      .map(|key_code| key_code as i32)
+      .unwrap_or_default(),
+  }
+}
+
+#[cfg(target_os = "macos")]
+fn macos_key_characters(event: &KeyEvent) -> (u16, u16) {
+  // CEF identifies AppKit modifier transitions by both characters being zero.
+  // Preserve NSEvent text for every other key so it remains a key-down/up event.
+  (
+    first_utf16(event.text_with_all_modifiers.as_deref()),
+    first_utf16(event.key_without_modifiers.to_text()),
+  )
+}
+
+#[cfg(target_os = "macos")]
+fn first_utf16(text: Option<&str>) -> u16 {
+  text
+    .and_then(|text| text.encode_utf16().next())
+    .unwrap_or_default()
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[cfg(target_os = "macos")]
+  #[test]
+  fn macos_native_key_codes_come_from_the_physical_key() {
+    assert_eq!(
+      macos_native_key_code(PhysicalKey::Code(winit::keyboard::KeyCode::KeyC)),
+      0x08
+    );
+    assert_eq!(
+      macos_native_key_code(PhysicalKey::Code(winit::keyboard::KeyCode::Backspace)),
+      0x33
+    );
+  }
+
+  #[cfg(target_os = "macos")]
+  #[test]
+  fn macos_character_values_distinguish_keys_from_modifier_changes() {
+    assert_eq!(first_utf16(Some("c")), u16::from(b'c'));
+    assert_eq!(first_utf16(Some("\x08")), u16::from(b'\x08'));
+    assert_eq!(first_utf16(None), 0);
+  }
 
   #[test]
   fn composition_uses_a_transparent_dotted_underline_by_default() {

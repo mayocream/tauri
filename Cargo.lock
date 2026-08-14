@@ -9824,6 +9824,7 @@ dependencies = [
  "url",
  "windows",
  "winit",
+ "winit-appkit",
  "x11-dl",
 ]
 
