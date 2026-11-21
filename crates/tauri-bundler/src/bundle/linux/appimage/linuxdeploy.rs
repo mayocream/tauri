@@ -151,6 +151,33 @@ pub fn bundle_project(settings: &Settings) -> crate::Result<Vec<PathBuf>> {
     }
   }
 
+  // The CEF distribution sits next to the main binary, whose RUNPATH is $ORIGIN.
+  if let Some(cef_path) = settings.webview_runtime().cef_distribution() {
+    for file in [
+      "libcef.so",
+      "icudtl.dat",
+      "v8_context_snapshot.bin",
+      "chrome_100_percent.pak",
+      "chrome_200_percent.pak",
+      "resources.pak",
+      "libvk_swiftshader.so",
+      "vk_swiftshader_icd.json",
+      "libvulkan.so.1",
+      "chrome-sandbox",
+      "locales/en-US.pak",
+      "locales/en-US_FEMININE.pak",
+      "locales/en-US_MASCULINE.pak",
+      "locales/en-US_NEUTER.pak",
+    ] {
+      let dest = app_dir_usr_bin.join(file);
+      fs_utils::copy_file(&cef_path.join(file), &dest)?;
+      if file.ends_with(".so") {
+        // since libcef.so is 1.5GB unstripped we will error out if strip fails.
+        Command::new("strip").arg(dest).output_ok()?;
+      }
+    }
+  }
+
   fs::copy(
     tools_path.join(format!("AppRun-{tools_arch}")),
     app_dir_path.join("AppRun"),
@@ -164,6 +191,22 @@ pub fn bundle_project(settings: &Settings) -> crate::Result<Vec<PathBuf>> {
     format!("usr/share/applications/{product_name}.desktop"),
     app_dir_path.join(format!("{product_name}.desktop")),
   )?;
+
+  // A CEF app takes its libraries from the host, as its Debian package does.
+  // linuxdeploy would deploy the build machine's NSS and GTK beside it, and the
+  // host's NSS modules and GPU drivers would then load against those older
+  // copies, so only the AppImage output plugin runs.
+  if matches!(settings.webview_runtime(), WebviewRuntime::Cef { .. }) {
+    Command::new(tools_path.join("linuxdeploy-plugin-appimage.AppImage"))
+      .env("OUTPUT", &appimage_path)
+      .env("ARCH", tools_arch)
+      .env("APPIMAGE_EXTRACT_AND_RUN", "1")
+      .args(["--appimage-extract-and-run", "--appdir"])
+      .arg(&app_dir_path)
+      .output_ok()?;
+    fs::remove_dir_all(&package_dir)?;
+    return Ok(vec![appimage_path]);
+  }
 
   let log_level = match settings.log_level() {
     log::Level::Error => "3",
