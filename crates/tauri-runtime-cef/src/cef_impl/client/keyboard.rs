@@ -84,5 +84,24 @@ wrap_keyboard_handler! {
 
       0
     }
+
+    // CEF offers a key the page leaves unhandled to the main menu as an
+    // `NSEvent` it rebuilds from the `KeyEvent`, and AppKit matches that
+    // against the Edit menu's Globe-key items with no Globe key held: a bare
+    // D starts Dictation and E opens Emoji & Symbols. A windowless browser's
+    // keys come from its host window, whose own event AppKit already offered
+    // the menu, so taking them here leaves the page as their last stop.
+    #[cfg(target_os = "macos")]
+    fn on_key_event(
+      &self,
+      browser: Option<&mut Browser>,
+      _event: Option<&KeyEvent>,
+      _os_event: CefOsEvent<'_>,
+    ) -> ::std::os::raw::c_int {
+      let windowless = browser
+        .and_then(|browser| browser.host())
+        .is_some_and(|host| host.is_window_rendering_disabled() != 0);
+      ::std::os::raw::c_int::from(windowless)
+    }
   }
 }
