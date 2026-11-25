@@ -95,6 +95,21 @@ impl CefExternalPump {
   pub(crate) fn do_work(&self) {
     self.state.do_work();
   }
+
+  /// See [`PlatformPump::destroy_chromium_work_source`]. Must run on the owner thread, once CEF is
+  /// initialized.
+  #[cfg(any(
+    target_os = "linux",
+    target_os = "dragonfly",
+    target_os = "freebsd",
+    target_os = "netbsd",
+    target_os = "openbsd"
+  ))]
+  pub(crate) fn destroy_chromium_work_source(&self) {
+    if let Ok(platform) = self.state.platform.lock() {
+      platform.destroy_chromium_work_source();
+    }
+  }
 }
 
 /// Platform-independent pump state, shared with the [`PlatformPump`] backend.
