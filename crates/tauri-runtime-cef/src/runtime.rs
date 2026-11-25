@@ -3513,7 +3513,10 @@ impl<T: UserEvent> CefRuntime<T> {
       target_os = "openbsd",
       target_os = "netbsd"
     ))]
-    pre_cef_signals.restore();
+    {
+      pre_cef_signals.restore();
+      context.cef_pump.destroy_chromium_work_source();
+    }
 
     #[cfg(target_os = "macos")]
     let app_delegate = if !is_helper {

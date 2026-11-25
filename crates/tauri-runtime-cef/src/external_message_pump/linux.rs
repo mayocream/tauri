@@ -136,6 +136,45 @@ impl PlatformPump {
   pub(super) fn is_timer_pending(&self) -> bool {
     get_time_interval_milliseconds(self.source_state.delayed_work_time) > 0
   }
+
+  /// Destroys the work source CEF's own pump left on this context, which keeps it from blocking.
+  ///
+  /// CEF's external pump is a Chromium `MessagePumpGlib` with its `Run` replaced. The base class
+  /// still attaches its work source to the default context, and outside its own `Run` that source
+  /// asks for a zero poll timeout and is never ready, so an idle main thread spins
+  /// (<https://github.com/chromiumembedded/cef/issues/3002>). CEF schedules its work through
+  /// `OnScheduleMessagePumpWork` instead, so nothing is lost with the source, and Chromium
+  /// destroying it again with its pump does nothing.
+  ///
+  /// GLib doesn't tell whose a source is, so this one is known by when it was attached, by its
+  /// priority, and by what it asks for. A Chromium whose source lets the context block
+  /// (<https://crrev.com/c/8829952>) keeps it.
+  ///
+  /// Must run on the owner thread, once CEF is initialized.
+  pub(super) fn destroy_chromium_work_source(&self) {
+    let context = glib::MainContext::default();
+    // GLib numbers sources in the order they are attached: CEF's come after this pump's, which is
+    // made before CEF is initialized, and before one attached now.
+    let first = unsafe { ffi::g_source_get_id(self.work_source) } + 1;
+    let end = glib::idle_add_once(|| ());
+
+    for id in first..end.as_raw() {
+      unsafe {
+        let source = ffi::g_main_context_find_source_by_id(context.to_glib_none().0, id);
+        if source.is_null() || ffi::g_source_get_priority(source) != ffi::G_PRIORITY_DEFAULT_IDLE {
+          continue;
+        }
+        let Some(prepare) = (*(*source).source_funcs).prepare else {
+          continue;
+        };
+        let mut timeout_ms = -1;
+        if prepare(source, &mut timeout_ms) == ffi::GFALSE && timeout_ms == 0 {
+          ffi::g_source_destroy(source);
+        }
+      }
+    }
+    end.remove();
+  }
 }
 
 impl Drop for PlatformPump {
@@ -292,3 +331,59 @@ static mut WORK_SOURCE_FUNCS: ffi::GSourceFuncs = ffi::GSourceFuncs {
   closure_callback: None,
   closure_marshal: None,
 };
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  unsafe extern "C" fn prepare<const TIMEOUT: c_int>(
+    _source: *mut ffi::GSource,
+    timeout_ms: *mut c_int,
+  ) -> ffi::gboolean {
+    unsafe { *timeout_ms = TIMEOUT };
+    ffi::GFALSE
+  }
+
+  fn attach<const TIMEOUT: c_int>(priority: c_int) -> *mut ffi::GSource {
+    let funcs = Box::leak(Box::new(ffi::GSourceFuncs {
+      prepare: Some(prepare::<TIMEOUT>),
+      check: None,
+      dispatch: None,
+      finalize: None,
+      closure_callback: None,
+      closure_marshal: None,
+    }));
+    unsafe {
+      let source = ffi::g_source_new(funcs, mem::size_of::<ffi::GSource>() as c_uint);
+      ffi::g_source_set_priority(source, priority);
+      ffi::g_source_attach(source, glib::MainContext::default().to_glib_none().0);
+      source
+    }
+  }
+
+  fn is_destroyed(source: *mut ffi::GSource) -> bool {
+    unsafe { ffi::g_source_is_destroyed(source) != ffi::GFALSE }
+  }
+
+  #[test]
+  fn only_the_source_that_never_lets_the_context_block_is_destroyed() {
+    let pump = PlatformPump::new(Weak::new());
+    let spinning = attach::<0>(ffi::G_PRIORITY_DEFAULT_IDLE);
+    let blocking = attach::<-1>(ffi::G_PRIORITY_DEFAULT_IDLE);
+    let other = attach::<0>(ffi::G_PRIORITY_DEFAULT);
+
+    pump.destroy_chromium_work_source();
+
+    assert!(is_destroyed(spinning));
+    assert!(!is_destroyed(blocking));
+    assert!(!is_destroyed(other));
+    assert!(!is_destroyed(pump.work_source));
+
+    for source in [spinning, blocking, other] {
+      unsafe {
+        ffi::g_source_destroy(source);
+        ffi::g_source_unref(source);
+      }
+    }
+  }
+}
